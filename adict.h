@@ -65,7 +65,7 @@ void colon(char*s, CELL** addr)
 	char*charP=(char*)w->addr; 
 	*charP=0xE9;
 	//compute jump adrress
-	*(int*)(charP+1)=(int)word_call_addr - wordNeck_len - (int)(w->addr);
+	*(long*)(charP+1)=(long)word_call_addr - wordNeck_len - (long)(w->addr);
 
 //	memcpy(w->addr, wordNeck, wordNeck_len);
 	memcpy((charP+wordNeck_len), addr, n);

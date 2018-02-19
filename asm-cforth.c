@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include <time.h>
 
-#define	DEBUGER  CLOSE
+//#define	DEBUGER  CLOSE
 #ifndef	DEBUGER 
 #define	DEBUG(str)		printf("[DEBUG]ENTERING:%s\n",str);
 #define	DEBUG2(str1,str2)	printf("[DEBUG]%s %s\n",str1,str2);
@@ -15,12 +15,12 @@
 
 #define	P(N)	printf(N);
 
-typedef void(*fnp)();		//funcion pointer
-#define	CELL	int		//only for 32bits
+typedef void(*fnp)();		//function pointer
+#define	CELL	long		//only for 64bits
 
 CELL cell=sizeof(CELL); 
 
-#define	SYSPATH	".\\system.f"
+#define	SYSPATH	"system.f"
 
 #define	NEXT		TMPR=(CELL)*IP;IP++;goto *(CELL*)TMPR;
 #define	_PUSH		++DP;*DP=TOS;
@@ -33,12 +33,11 @@ char EOS=' ';//end of string
 
 #define	STACK_LEN	256
 CELL DS[STACK_LEN], RS[STACK_LEN], XS[STACK_LEN];//(data | return | X)stack
-	CELL*RP;//stack pointer
-	CELL*XP;//stack pointer	
+CELL*RP;//stack pointer
+CELL*XP;//stack pointer	
 
 CELL *_showSTACK;
 char *new_name=NULL;
-
 
 CELL**pushh;
 CELL**zbranchh;
@@ -60,49 +59,36 @@ CELL**nextt;
 
 #define	dictNum	3
 word * dict[dictNum];
-void dictIndexInit()
-{
+void dictIndexInit() {
 	dict[0]=immeDictHead;
 	dict[1]=codeDictHead;
 	dict[2]=colonDictHead;
 }
 
-int search_word(char *w)
-{
+long search_word(char *w) {
 	char check_code;
 	check_code=computeCheckCode(w);
 	dictIndexInit();
 	int d=0;
-	for (; d<dictNum; d++)
-	{
+	for (; d<dictNum; d++) {
 		if (dict[d]==NULL) break;
-		do
-		{
-			if (check_code==dict[d]->checkCode && !strcmp(dict[d]->name,w))
-			{
+		do {
+			if (check_code==dict[d]->checkCode && !strcmp(dict[d]->name,w)) {
 				DEBUG2("success find:",w)
-				if (d==0)
-					((fnp)(dict[d]->addr))();
-				else
-					TMPLP_NEXT(dict[d]->addr);
+				if (d==0) ((fnp)(dict[d]->addr))();
+				else TMPLP_NEXT(dict[d]->addr);
 				return 1;
 			}
-		}while(dict[d]=dict[d]->next);
-	}
-				
+		} while(dict[d]=dict[d]->next);
+	}		
 	return 0;
-
 }
 
-
-
-int compile(char *s)
-{
+long compile(char *s) {
 	s=ignore_blankchar( s);
 	
 	new_name=NULL;
-	if (*s==':')
-	{
+	if (*s==':') {
 		s++;
 		new_name=ignore_blankchar(s);
 		s=new_name;
@@ -111,36 +97,25 @@ int compile(char *s)
 	}
 	char *w, *charp;
 	int len;
-	while (*s!=0)
-	{
+	while (*s!=0) {
 		w=s;
-		if (*s=='/')
-		{
-			if (*(s+1)=='/')
-			{
-				do{
-					s++;
-				}while (!(*s==10 || *s==13));
+		if (*s=='/') {
+			if (*(s+1)=='/') {
+				do { s++;
+				} while (!(*s==10 || *s==13));
 			}
-			else if(*(s+1)=='*')
-			{
-				do{
-					s++;
-				}while(!(*s=='/' && *(s-1)=='*'));
+			else if(*(s+1)=='*') {
+				do { s++;
+				} while(!(*s=='/' && *(s-1)=='*'));
 				s++;
 			}
-			
 			s=ignore_blankchar(s);
 			w=s;
-		}
-		else if(*w=='"')
-		{
+		} else if(*w=='"') {
 			++w;
-			while(1)
-			{
+			while(1) {
 				++s;
-				if(*s=='"' && *(s+1)==' ')
-				{
+				if(*s=='"' && *(s+1)==' ') {
 					 *(++s)='\0';
 					 ++s;
 					 break;
@@ -155,15 +130,12 @@ int compile(char *s)
 		}
 		s=split_word(s);
 
-		if(!search_word(w) )
-		{
+		if(!search_word(w) ) {
 			if (is_num(w))
 			{//change to number
 				TMPLP_NEXT(pushh);
-				TMPLP_NEXT(atoi(w));
-			}
-			else
-			{
+				TMPLP_NEXT(atol(w));
+			} else {
 				printf("[%s]?\n",w);
 				return 0;
 			}
@@ -172,40 +144,35 @@ int compile(char *s)
 	}
 	*tmpLp=_showSTACK; 
 
-	if (new_name!=NULL)
-		colon(new_name,tmpList);
+	if (new_name!=NULL) colon(new_name,tmpList);
 	tmpLp=tmpList;
 	return 1;
 }
 
 
-void checkcmd(char*s)
-{
+void checkcmd(char*s) {
 	strcat(cmdstr," ;");
 	s=ignore_blankchar(s);
 	char c=*s;
-	while ( *s!=';')
-		s++;
-	if (c==':') 
-		s++;
+	while ( *s!=';') s++;
+	if (c==':') s++;
 	*s=0;
 }
 
 
-int main() 
-{
-pushh	=&&push;
-zbranchh=&&zbranch;
-branchh	=&&branch;
-torr	=&&tor;
-casee	=&&_casee;
-droprr	=&&dropr;
-dropr44	=&&dropr4;
-doo	=&&_do;
-breakk	=&&_break;
-loopp	=&&_loop;
-forr	=&&_for;
-nextt	=&&_next;
+int main() {
+	pushh	=&&push;
+	zbranchh=&&zbranch;
+	branchh	=&&branch;
+	torr	=&&tor;
+	casee	=&&_casee;
+	droprr	=&&dropr;
+	dropr44	=&&dropr4;
+	doo	=&&_do;
+	breakk	=&&_break;
+	loopp	=&&_loop;
+	forr	=&&_for;
+	nextt	=&&_next;
 	
 	register CELL TOS=0;
 	register CELL TMPR=0;	//eax?
@@ -297,8 +264,6 @@ nextt	=&&_next;
 	code("dups",&&dups);
 	code("dup",&&dup);
 
-
-
 	//immeDict
 	immediate("if",(CELL**)_if);
 	immediate("endif",(CELL**)_endif);
@@ -312,7 +277,6 @@ nextt	=&&_next;
 	immediate("for",(CELL**)__for);
 	immediate("next",(CELL**)__next);
 
-
 	DP=DS-1;
 	RP=RS-1;
 	XP=XS-1;
@@ -321,17 +285,15 @@ nextt	=&&_next;
 	FILE*fp;
 	char ch=0;
 	char*chp;
-	char *loadInf="succeed";
+	char *loadInf="success";
+
 loadsys:
 	fp=fopen(SYSPATH,"r");
 	if (fp==NULL)
 		loadInf="FAIL";
-	else
-	{
-		while(1)
-		{
-			while(ch!=':' && ch!=EOF)
-			{
+	else {
+		while(1) {
+			while(ch!=':' && ch!=EOF) {
 				ch=fgetc(fp);
 		//		putchar(ch);
 			}
@@ -339,17 +301,13 @@ loadsys:
 			if(ch==EOF) break;
 
 			chp=cmdstr;
-			while (1)
-			{
+			while (1) {
 				*chp=ch;
 				ch=fgetc(fp);
 			//	putchar(ch);
-				if (*chp==';' && (is_blankchar(ch) || ch==EOF) )
-				{
+				if (*chp==';' && (is_blankchar(ch) || ch==EOF) ) {
 					*(chp+1)='\0';
-					if (compile(cmdstr))
-						break;
-					
+					if (compile(cmdstr)) break;
 					loadInf="FAIL";
 					goto fileclose;					
 				}
@@ -358,12 +316,11 @@ loadsys:
 			//if(ch==EOF) break;
 		}
 	}
+
 fileclose:
 	fclose(fp);
-	printf("\n-------------------------");
-	printf(loadInf); printf(" to load system");
-	printf("-------------------------\n");
-	printf("asm-cforth version 0.1------made by ear\nplease input 'words' to see the dictionary\n");
+	printf("---------------------- System load: %s ----------------------\n",loadInf);
+	printf("asm-cforth version 0.2(ear) - input 'words' to see the dictionary\n");
 init:
 	DP=DS-1;
 	RP=RS-1;
@@ -376,11 +333,9 @@ showSTACK:
 	printf("DS> ");
 	CELL*i;
 	i=DS+1;
-	if (DP>=DS)
-	{
-		while (i<=DP)
-			printf("%d ",*i++);
-		printf("%d ",TOS);
+	if (DP>=DS) {
+		while (i<=DP) printf("%ld ",*i++);
+		printf("%ld ",TOS);
 	}
 	printf("\n");
 /*
@@ -406,12 +361,10 @@ showSTACK:
 //*/
 
 cmd_line:
-	printf(">>>");gets(cmdstr);
+	printf(">>>");fgets(cmdstr,CMDSTR_LEN, stdin);
 	checkcmd(cmdstr);
-	if (!compile(cmdstr))
-		goto init;
-	else 
-	{
+	if (!compile(cmdstr)) goto init;
+	else {
 		if (new_name !=NULL)
 		//	goto cmd_line;
 			goto showSTACK;
@@ -420,11 +373,6 @@ cmd_line:
 		IP=tmpList;
 		NEXT
 	}
-
-
-
-
-
 
 //DATA STACK OPERATE 
 push:	DEBUG("push")// -- N
@@ -573,10 +521,8 @@ zbranch2:	goto branch;
 	NEXT
 
 _casee:	DEBUG("case")//N N' -- (N==N'?  || N )
-	if(*DP==TOS)
-		{DP--; _POP; goto zbranch1;}
-	else
-		{_POP; goto branch;}
+	if(*DP==TOS) {DP--; _POP; goto zbranch1;}
+	else {_POP; goto branch;}
 
 _break:	DEBUG("break")
 	IP=(CELL**)*RP; IP--; goto branch;
@@ -647,8 +593,7 @@ parenr:	// -- N		// ADDR -R-
 	NEXT
 varx:
 //	TMPR=TOS;
-	while (TOS--)
-	{
+	while (TOS--) {
 		*(++XP)=*(DP--);
 	}
 //	*(++XP)=TMPR;
@@ -683,7 +628,7 @@ printstr:DEBUG("printstr")
 	printf("%s",(char*)*IP++);
 	NEXT
 printnum:DEBUG("printnum")
-	printf("%d ",TOS); _POP;
+	printf("%ld ",TOS); _POP;
 	NEXT
 
 //	float*np;
@@ -713,7 +658,7 @@ timeStart:
 	NEXT;
 timeEnd:
 	_PUSH;
-	*(float*)(++DP)=((float)(clock()-*(XP--))/CLK_TCK) ;
+	*(float*)(++DP)=((float)(clock()-*(XP--))/CLOCKS_PER_SEC) ;
 	_POP;
 	NEXT;
 
