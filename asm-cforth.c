@@ -4,8 +4,10 @@
 #include <ctype.h>
 #include <time.h>
 
-//#define	DEBUGER  CLOSE
-#ifndef	DEBUGER 
+#define	SYSPATH	"system.f"
+//#define	DEBUG_ON  OFF
+
+#ifndef	DEBUG_ON 
 #define	DEBUG(str)		printf("[DEBUG]ENTERING:%s\n",str);
 #define	DEBUG2(str1,str2)	printf("[DEBUG]%s %s\n",str1,str2);
 #else
@@ -16,11 +18,9 @@
 #define	P(N)	printf(N);
 
 typedef void(*fnp)();		//function pointer
-#define	CELL	long		//only for 64bits
 
-CELL cell=sizeof(CELL); 
-
-#define	SYSPATH	"system.f"
+#define	CELL	long		// a cell is the basic data type and word size
+int cellsize=sizeof(CELL); 
 
 #define	NEXT		TMPR=(CELL)*IP;IP++;goto *(CELL*)TMPR;
 #define	_PUSH		++DP;*DP=TOS;
@@ -32,9 +32,9 @@ CELL cell=sizeof(CELL);
 char EOS=' ';//end of string
 
 #define	STACK_LEN	256
-CELL DS[STACK_LEN], RS[STACK_LEN], XS[STACK_LEN];//(data | return | X)stack
-CELL*RP;//stack pointer
-CELL*XP;//stack pointer	
+CELL DS[STACK_LEN], RS[STACK_LEN], XS[STACK_LEN];  //(data | return | X)stack
+CELL*RP;	//stack pointer
+CELL*XP;	//stack pointer	
 
 CELL *_showSTACK;
 char *new_name=NULL;
@@ -52,10 +52,131 @@ CELL**loopp;
 CELL**forr;
 CELL**nextt;
 
+struct _word {
+	char *name;
+	char checkCode;
+	CELL **addr;
+	CELL **list;
+	struct _word *next;
+};
+typedef struct _word word;
 
-#include "adict.h"
+#define	CMDSTR_LEN	1024
+char cmdstr[CMDSTR_LEN];
+CELL* tmpList[CMDSTR_LEN/4];  // 
+CELL** tmpLp=tmpList;
+CELL** callList;  // List of instructions for a word call
 
-#include "str.h"
+word *immeDictHead=NULL, *codeDictHead=NULL, *colonDictHead=NULL;
+
+char computeCheckCode(char* s) {
+	char code=0;
+	while (*s) code^=*s++;
+	return *(--s)+code;
+}
+
+word * createWord(char* s, CELL** addr) {
+	word *w=(word*)malloc(sizeof(word));
+	w->checkCode=computeCheckCode(s);
+	w->name=s;
+	w->addr=addr;
+	return w;
+}
+
+void immediate(char*s, CELL** addr) {
+	word *w=createWord(s,addr);
+	w->next=immeDictHead;
+	immeDictHead=w;
+}
+
+CELL** code(char*s, CELL** addr) {
+	word *w=createWord(s,addr);
+	w->next=codeDictHead;
+	codeDictHead=w;
+	return w->addr;
+}
+CELL** word_call_addr;  // address of the call function to invoke forth words
+
+void colon(char* s, CELL** addr) {  // add to dictionary
+
+	printf("adding to dict: %s @%p\n",s,addr);
+
+	word *w=(word*)malloc(sizeof(word));
+	w->checkCode=computeCheckCode(s);
+
+	w->name=(char*)malloc(strlen(s)+1);
+	strcpy(w->name,s);
+
+	CELL n=(CELL)tmpLp-(CELL)tmpList;
+	printf("n=%ld\n",n);
+
+	printf("tmplist> ");
+	CELL** j=tmpList;
+	int i=0;
+	while (i<n/8) { printf("%p ",(void *)*j++); i++; }
+	printf("\n");
+
+	w->addr=word_call_addr;
+	w->list=(CELL**)malloc(n);
+	memcpy(w->list, addr, n);   // Copy the tmpList
+	printf("added to dict: %s @%p\n",s,w->addr);
+	
+	w->next=colonDictHead;
+	colonDictHead=w;
+}
+
+void markAddr(){ *(++XP)=(CELL)tmpLp++;}
+
+void _if()	{TMPLP_NEXT(zbranchh);	markAddr();}
+void _endif()	{*(CELL*)*XP=(CELL)tmpLp-(CELL)*XP;	XP--;}
+void _else() {
+	TMPLP_NEXT(branchh);
+	tmpLp++; _endif();
+	tmpLp--; markAddr();
+}
+
+void _switch()	{TMPLP_NEXT(doo); *(++RP)=0; markAddr();}
+void _case()	{TMPLP_NEXT(casee); markAddr();}
+void _break()	{TMPLP_NEXT(breakk); if(*RP==0){_endif();} }
+void _ends() {
+	TMPLP_NEXT((*RP==4?dropr44:droprr)); 
+	tmpLp--; _endif(); tmpLp++;
+	RP--;
+}
+
+void __do()	{TMPLP_NEXT(doo); *(++RP)=1; markAddr();}
+void __loop()	{TMPLP_NEXT(loopp); _ends();}
+void __for()	{TMPLP_NEXT(forr); *(++RP)=4; markAddr();}
+void __next()	{TMPLP_NEXT(nextt); _ends();}
+
+int is_blankchar(char c)	{ return (c==' ' || c=='	' || c==10 || c==13 ); }
+
+char * ignore_blankchar(char *s) {
+	while (is_blankchar(*s)) s++;
+	return s;
+}
+
+char * until_wordend(char *s) {
+	while ( !is_blankchar(*s)  && *s!='\0') s++;
+	return s;
+}
+
+char * split_word(char *s) {
+	s=until_wordend(s);
+	if (*s=='\0') return s;
+	*s='\0';
+	s++;
+	return s;
+}
+
+int is_num(char *s) {
+	if(*s=='-') s++;
+	while (*s !=0) {
+		if (!isdigit(*s)) return 0;
+		s++;
+	}
+	return 1;
+}
 
 #define	dictNum	3
 word * dict[dictNum];
@@ -69,44 +190,42 @@ long search_word(char *w) {
 	char check_code;
 	check_code=computeCheckCode(w);
 	dictIndexInit();
-	int d=0;
-	for (; d<dictNum; d++) {
+	for (int d=0; d<dictNum; d++) {
 		if (dict[d]==NULL) break;
 		do {
 			if (check_code==dict[d]->checkCode && !strcmp(dict[d]->name,w)) {
-				DEBUG2("success find:",w)
-				if (d==0) ((fnp)(dict[d]->addr))();
-				else TMPLP_NEXT(dict[d]->addr);
+				DEBUG2("found:",w)
+				callList = dict[d]->list;
+				TMPLP_NEXT(dict[d]->addr);
 				return 1;
 			}
-		} while(dict[d]=dict[d]->next);
+		} while (dict[d] = dict[d]->next);
 	}		
 	return 0;
 }
 
-long compile(char *s) {
+int compile(char *s) {
 	s=ignore_blankchar( s);
 	
-	new_name=NULL;
-	if (*s==':') {
+	new_name = NULL;
+	if (*s == ':') {
 		s++;
 		new_name=ignore_blankchar(s);
+		DEBUG2("defining word:",new_name)
 		s=new_name;
 		s=split_word(s);
 		s=ignore_blankchar(s);
 	}
 	char *w, *charp;
 	int len;
-	while (*s!=0) {
+	while (*s != 0) {
 		w=s;
 		if (*s=='/') {
 			if (*(s+1)=='/') {
-				do { s++;
-				} while (!(*s==10 || *s==13));
+				do { s++; } while (!(*s==10 || *s==13));
 			}
 			else if(*(s+1)=='*') {
-				do { s++;
-				} while(!(*s=='/' && *(s-1)=='*'));
+				do { s++; } while(!(*s=='/' && *(s-1)=='*'));
 				s++;
 			}
 			s=ignore_blankchar(s);
@@ -131,12 +250,11 @@ long compile(char *s) {
 		s=split_word(s);
 
 		if(!search_word(w) ) {
-			if (is_num(w))
-			{//change to number
+			if (is_num(w)) {	//change to number
 				TMPLP_NEXT(pushh);
 				TMPLP_NEXT(atol(w));
 			} else {
-				printf("[%s]?\n",w);
+				printf("[%s]? unknown word\n",w);
 				return 0;
 			}
 		}
@@ -149,16 +267,14 @@ long compile(char *s) {
 	return 1;
 }
 
-
-void checkcmd(char*s) {
+void checkcmd(char *s) {
 	strcat(cmdstr," ;");
 	s=ignore_blankchar(s);
 	char c=*s;
-	while ( *s!=';') s++;
-	if (c==':') s++;
+	while ( *s != ';') s++;
+	if (c == ':') s++;
 	*s=0;
 }
-
 
 int main() {
 	pushh	=&&push;
@@ -176,13 +292,11 @@ int main() {
 	
 	register CELL TOS=0;
 	register CELL TMPR=0;	//eax?
-	register CELL*DP=0;//stack pointer
+	register CELL*DP=0;     //stack pointer
 	register CELL**IP=0;
 
 	_showSTACK=&&showSTACK;
 	word_call_addr=(&&call);
-//	wordNeck=(&&_wordNeck);
-
 
 	code("push",&&push);
 	code("bye",&&bye);
@@ -191,13 +305,9 @@ int main() {
 	code("timeEnd",&&timeEnd);
 	code("malloc",&&_malloc);
 
-
-//	code("fib",&&fib);
-	
 	code(".f",&&printfloat);
 	code(".\"",&&printstr);
 	code(".",&&printnum);
-
 
 	code("sameAs",&&sameAs);
 	code("exec",&&exec);
@@ -252,7 +362,6 @@ int main() {
 	code("++",&&add1);
 	code("--",&&sub1);
 
-
 	code("ret",&&ret);
 	code(";",&&ret);
 
@@ -282,38 +391,34 @@ int main() {
 	XP=XS-1;
 	tmpLp=tmpList;
 
-	FILE*fp;
+	FILE *fp;
 	char ch=0;
-	char*chp;
+	char *chp;
 	char *loadInf="success";
+	char *getsRet;
 
 loadsys:
 	fp=fopen(SYSPATH,"r");
 	if (fp==NULL)
-		loadInf="FAIL";
+		loadInf="failed";
 	else {
 		while(1) {
 			while(ch!=':' && ch!=EOF) {
-				ch=fgetc(fp);
-		//		putchar(ch);
+				ch=fgetc(fp);  // putchar(ch);
 			}
-			
 			if(ch==EOF) break;
-
 			chp=cmdstr;
 			while (1) {
 				*chp=ch;
-				ch=fgetc(fp);
-			//	putchar(ch);
+				ch=fgetc(fp);    // putchar(ch);
 				if (*chp==';' && (is_blankchar(ch) || ch==EOF) ) {
 					*(chp+1)='\0';
 					if (compile(cmdstr)) break;
-					loadInf="FAIL";
+					loadInf="failed";
 					goto fileclose;					
 				}
 				chp++;
 			}
-			//if(ch==EOF) break;
 		}
 	}
 
@@ -327,9 +432,13 @@ init:
 	XP=XS-1;
 	tmpLp=tmpList;
 	DEBUG("INIT()")
-//	DS[0]=123;DS[1]=456;DP=DS+2;
 
 showSTACK:
+	printf("tmplist> ");
+	CELL** j=tmpList;
+	while (*j != (&&showSTACK) ) printf("%p ",(void *)*j++);
+	printf("\n");
+
 	printf("DS> ");
 	CELL*i;
 	i=DS+1;
@@ -338,49 +447,39 @@ showSTACK:
 		printf("%ld ",TOS);
 	}
 	printf("\n");
-/*
-	printf("tmplist> ");
-	CELL** j=tmpList;
-	while (*j != (&&showSTACK) )
-		printf("%d ",*j++);
-	printf("\n");
-//*/
-/*
+
 	printf("RS> ");
 	CELL *k=RS;
-	for (;k<=RP ;k++ )
-		printf("%d ",*k);
+	for (;k<=RP ;k++ ) printf("%ld ",*k);
 	printf("\n");
-//*/
-/*
+
 	printf("XS> ");
 	CELL *L=XS;
-	for (;L<=XP ;L++ )
-		printf("%d ",*L);
+	for (;L<=XP ;L++ ) printf("%ld ",*L);
 	printf("\n");
-//*/
+
 
 cmd_line:
-	printf(">>>");fgets(cmdstr,CMDSTR_LEN, stdin);
+	printf(">>>");	getsRet=fgets(cmdstr,CMDSTR_LEN, stdin);
 	checkcmd(cmdstr);
 	if (!compile(cmdstr)) goto init;
 	else {
-		if (new_name !=NULL)
+		if (new_name != NULL) {
 		//	goto cmd_line;
 			goto showSTACK;
-
-		DEBUG("entering: explain")
+		}
+		//printf("tmpList=%p",tmpList);
 		IP=tmpList;
 		NEXT
 	}
 
 //DATA STACK OPERATE 
-push:	DEBUG("push")// -- N
+push:	DEBUG("push")    // -- N
 	PUSH((CELL)*IP)	
 	IP++;
 	NEXT
 
-dup:	DEBUG("dup")// N -- N N
+dup:	DEBUG("dup")   // N -- N N
 	_PUSH
 	NEXT
 
@@ -543,16 +642,15 @@ _loop:	DEBUG("loop")
 	IP=(CELL**)*RP;
 	NEXT
 
-_while:	DEBUG("while")//FLAG --
+_while:	DEBUG("while")  //FLAG --
 	TMPR=TOS;
 	_POP 
 	if(TMPR==0) goto _break;
 	NEXT
 
-_for:	DEBUG("for")//BEGIN UNTIL STEP -- 
+_for:	DEBUG("for")  //BEGIN UNTIL STEP -- 
 	TMPR=*DP;
-	if( *(DP-1)==TMPR ) 
-	{
+	if( *(DP-1)==TMPR ) {
 		DP-=2; _POP; RP+=4; goto branch;
 		//IP=(CELL**)( (CELL)IP+(CELL)(*(IP))+cell ); NEXT
 	}
@@ -586,7 +684,7 @@ parenr:	// -- N		// ADDR -R-
 	TMPR--;
 	TMPR-=*RP;
 	RP--;
-	TMPR/=cell;
+	TMPR/=cellsize;
 	_PUSH;
 	TOS=TMPR;
 	//TOS=((CELL)DP-1-*(RP--))/cell;
@@ -607,7 +705,6 @@ x3:
 x4:
 	PUSH(*(XP-3)); NEXT
 
-
 //cmp: !=  ==  >  <  u>
 //N1 N2 -- FLAG
 nequ:	TOS-=*DP--;	NEXT
@@ -616,7 +713,6 @@ above:	TOS=((*DP--)>TOS);	NEXT
 below:	TOS=((*DP--)<TOS);	NEXT
 uabove:	TOS=((unsigned CELL)*(DP--) > (unsigned CELL)TOS);
 	NEXT
-
 
 exec:	TMPR=TOS; _POP; goto *(CELL*)TMPR;
 sameAs:	TMPR=(CELL)*IP;
@@ -631,27 +727,21 @@ printnum:DEBUG("printnum")
 	printf("%ld ",TOS); _POP;
 	NEXT
 
-//	float*np;
 printfloat:DEBUG("printfloat")
 	_PUSH
-//	np=(float*)DP;
 	printf("%f ",*(float*)DP);
 	DP--;
 	_POP
 	NEXT
 
 words:	dictIndexInit();
-	int d;
-	for (d=0;d<dictNum ; d++)
-	{
+	for (int d=0; d<dictNum ; d++) {
 		if (dict[d]==NULL) break;
-		do{
-			printf("[%d]%s ",dict[d]->checkCode,dict[d]->name);
+		do { printf("%s ",dict[d]->name);
 		} while(dict[d]=dict[d]->next);
 		printf("\n");
 	}
 	NEXT
-		
  
 timeStart:
 	*(++XP)=clock();
@@ -662,19 +752,21 @@ timeEnd:
 	_POP;
 	NEXT;
 
-//fib:TOS=Fib_Common(TOS);NEXT
-
-
-
-//_wordNeck:	goto *(int*)word_call_addr;
 ret:	DEBUG("entering: ret")	
-	IP=(CELL**)*RP--;	NEXT
+	IP=(CELL**)*RP--;	
+	NEXT
 
 call:	DEBUG("entering: call")
-	*(++RP)=(CELL)IP;
-	TMPR+=wordNeck_len;
-	IP=(CELL**)TMPR;
-//	IP=(CELL**)( TMPR+ wordNeck_len);
+	*(++RP)=(CELL)TMPR;
+	printf("retp=%p ",RP);
+	IP=(CELL**)callList;
+	printf("IP=%p\n",IP);
+
+	printf("RS> ");
+	CELL *kk=RS;
+	for (;kk<=RP ;kk++ ) printf("%ld ",*kk);
+	printf("\n");
+
 	NEXT
 
 bye:	return 0;
